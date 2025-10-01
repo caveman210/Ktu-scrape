@@ -3,6 +3,7 @@
 `A (failed) Try of webscraping KTU syllabus from their website`
 
 A webcrawler and webscraper focussed on pulling PDFs from KTU website. 
+
 **NGL, I'm kinda surprised by the ktu.edu.in website. Half the efforts spent on that website is all that's needed to fix the 504 gateway error on their servers lol.**
 
 Until now:
