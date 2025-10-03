@@ -1,14 +1,12 @@
 import os
 import shutil
 import platform
-
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
-
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
@@ -32,16 +30,17 @@ def path_determiner():
             "Linux": lambda: (shutil.which('chromium-browser') or shutil.which('chromium')) is not None
         },
         'edge': {
-            "Windows": lambda: os.path.exists(os.path.join(os.environ['ProgramFiles (x86)'], "Microsoft/Edge/Application/msedge.exe")),
+            "Windows": lambda: os.path.exists(os.path.join(os.environ["ProgramFiles (x86)"], "Microsoft/Edge/Application/msedge.exe")),
             "Linux": lambda: shutil.which('microsoft-edge') is not None
         }
     }
 
     for browsr, chk in check_br.items():
-        check = chk.get(op_sys)
-        if check and check():
+        check_func = chk.get(op_sys)
+        if check_func and check_func():
             browsers.append(browsr)
-    print(f"Found browser: {browsers}")
+
+    print(f"Found installed browsers: {browsers}")
     return browsers
 
 
@@ -51,6 +50,12 @@ drv_conf = {
         'service': ChromeService,
         'manager': ChromeDriverManager,
         'options': webdriver.ChromeOptions
+    },
+    'firefox': {
+        'driver': webdriver.Firefox,
+        'service': FirefoxService,
+        'manager': GeckoDriverManager,
+        'options': webdriver.FirefoxOptions
     },
     'edge': {
         'driver': webdriver.Edge,
@@ -63,43 +68,50 @@ drv_conf = {
         'service': ChromeService,
         'manager': ChromeDriverManager,
         'options': webdriver.ChromeOptions
-    },
-    'firefox': {
-        'driver': webdriver.Firefox,
-        'service': FirefoxService,
-        'manager': GeckoDriverManager,
-        'options': webdriver.FirefoxOptions
-    },
+    }
 }
 
 
-def browser_finder():
-    installed = path_determiner()
-    priority = [key for key in drv_conf if key in installed]
-    for i in priority:
-        print(f"Trying {i.capitalize()}..")
+def browser_sniffer(download_dir):
+    installed_browsers = path_determiner()
+    priority = [key for key in ['chrome', 'firefox',
+                                'edge', 'chromium'] if key in installed_browsers]
+
+    if not priority:
+        print("\nNo supported browsers found. Please install Chrome or Firefox.")
+        return None
+
+    for browser_name in priority:
+        print(f"Trying to launch {browser_name.capitalize()}...")
         try:
-            config = drv_conf[i]
-            options_br = config['options']()
-            service_br = config['service'](config['manager']().install())
+            config = drv_conf[browser_name]
+            options = config['options']()
+            options.add_argument("--start-maximized")
+            options.add_argument("--window-size=1920,1080")
 
-            if i in ['chrome', 'chromium', 'edge']:
-                # Basic anti-detection options are still a good idea
-                options_br.add_argument("start-maximized")
-                options_br.add_experimental_option(
-                    "excludeSwitches", ["enable-automation"])
-                options_br.add_experimental_option(
-                    'useAutomationExtension', False)
+            if browser_name in ['chrome', 'chromium', 'edge']:
+                prefs = {
+                    "download.default_directory": download_dir,
+                    "download.prompt_for_download": False,
+                    "plugins.always_open_pdf_externally": True
+                }
+                options.add_experimental_option("prefs", prefs)
 
-                if i == 'chromium':
-                    options_br.binary_location = shutil.which(
-                        'chromium-browser') or shutil.which('chromium')
+            if browser_name == 'firefox':
+                options.set_preference("browser.download.dir", download_dir)
+                options.set_preference("browser.download.folderList", 2)
+                options.set_preference(
+                    "browser.helperApps.neverAsk.saveToDisk", "application/pdf")
+                options.set_preference("pdfjs.disabled", True)
 
-                # Create the driver
-                driver = config['driver'](
-                    service=service_br, options=options_br)
+            if browser_name == 'chromium':
+                options.binary_location = shutil.which(
+                    'chromium-browser') or shutil.which('chromium')
 
-                # APPLY STEALTH
+            service = config['service'](config['manager']().install())
+            driver = config['driver'](service=service, options=options)
+
+            if browser_name in ['chrome', 'chromium', 'edge']:
                 stealth(driver,
                         languages=["en-US", "en"],
                         vendor="Google Inc.",
@@ -109,77 +121,14 @@ def browser_finder():
                         fix_hairline=True,
                         )
 
-            # --- END OF STEALTH IMPLEMENTATION ---
-
-            # --- START OF NEW ANTI-DETECTION CODE ---
-            if i in ['chrome', 'chromium', 'edge']:
-                # This is the most important line for Chromium-based browsers
-                options_br.add_argument(
-                    "--disable-blink-features=AutomationControlled")
-                options_br.add_experimental_option(
-                    "excludeSwitches", ["enable-automation"])
-                options_br.add_experimental_option(
-                    'useAutomationExtension', False)
-
-            if i == 'firefox':
-                # This is the most important line for Firefox
-                options_br.set_preference("dom.webdriver.enabled", False)
-                options_br.set_preference('useAutomationExtension', False)
-            # --- END OF NEW ANTI-DETECTION CODE ---
-
-            driver = config['driver'](service=service_br, options=options_br)
-
-            print(f"Launched {i.capitalize()} successfully.")
+            print(f"Launched {browser_name.capitalize()} successfully.")
             return driver
 
-        except (WebDriverException, KeyError) as e:
-            print(f"Error occured, unable to launch {i.capitalize()}.")
+        except (WebDriverException, KeyError, Exception) as e:
+            print(f"An error occurred, unable to launch {
+                  browser_name.capitalize()}.")
+            print(f"Reason: {e}")
             continue
 
-
-'''
-def check_browser():
-    browser = ['chrome', 'firefox', 'edge', 'chromium']
-
-    for i in browser:
-        print(f"Launching browser {i.capitalize()}.. ")
-
-        if i == 'chrome':
-            options = webdriver.ChromeOptions()
-            options.add_argument("--log-level=3")
-            driver = webdriver.Chrome(
-                service=ChromeService(ChromeDriverManager().install()),
-                options=options
-            )
-            print("Launched Chrome.")
-
-        elif i == 'firefox':
-            options = webdriver.FirefoxOptions()
-            options.add_argument('--log-level=3')
-            driver = webdriver.Firefox(
-                service=ChromeService(GeckoDriverManager().install()),
-                options=options
-            )
-            print("Launched Firefox.")
-
-        elif i == 'edge':
-            options = webdriver.EdgeOptions()
-            options.add_argument('--log-level=3')
-            driver = webdriver.Edge(
-                service=EdgeService(EdgeChromiumDriverManager.install()),
-                options=options
-            )
-            print("Launched Microsoft Edge.")
-
-        elif i == 'chromium':
-            chromium = shutil.which(
-                'chromium-browser') or shutil.which('chromium')
-            if chromium:
-                options = webdriver.ChromeOptions()
-                options.binary_location = chromium
-                driver = webdriver.Chrome(
-                    service=ChromeService(ChromeDriverManager.install()),
-                    options=options
-                )
-            print("Launched Chromium with Chrome driver.")
-'''
+    print("\nCould not initialize a WebDriver for any installed browser.")
+    return None
