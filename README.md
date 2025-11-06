@@ -1,6 +1,6 @@
 # Ktu-scrape
 
-`A (failed) Try of webscraping KTU syllabus from their website`
+`A (incompleted) Try of webscraping KTU syllabus from their website`
 
 A webcrawler and webscraper focussed on pulling PDFs from KTU website. 
 
